@@ -1,8 +1,11 @@
 use std::net::TcpListener;
 
 use sqlx::PgPool;
-use zero2prod::{configuration::get_configuration, startup::run, telemetry::{get_subscriber, init_subscriber}};
-
+use zero2prod::{
+    configuration::get_configuration,
+    startup::run,
+    telemetry::{get_subscriber, init_subscriber},
+};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
