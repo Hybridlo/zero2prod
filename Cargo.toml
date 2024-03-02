@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.5.1"
+config = "0.14.0"
 serde = { version = "1.0.197", features = ["derive"] }
 sqlx = { version = "0.7.3", default-features = false, features = ["runtime-tokio", "tls-rustls", "macros", "postgres", "uuid", "chrono", "migrate"] }
 
