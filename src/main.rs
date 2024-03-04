@@ -2,7 +2,10 @@ use std::net::TcpListener;
 
 use sqlx::postgres::PgPoolOptions;
 use zero2prod::{
-    configuration::get_configuration, email_client::EmailClient, startup::run, telemetry::{get_subscriber, init_subscriber}
+    configuration::get_configuration,
+    email_client::EmailClient,
+    startup::run,
+    telemetry::{get_subscriber, init_subscriber},
 };
 
 #[actix_web::main]
@@ -15,12 +18,16 @@ async fn main() -> std::io::Result<()> {
         .acquire_timeout(std::time::Duration::from_secs(2))
         .connect_lazy_with(configuration.database.with_db());
 
-    let sender_email = configuration.email_client.sender()
+    let sender_email = configuration
+        .email_client
+        .sender()
         .expect("Invalid sender email address");
+    let timeout = configuration.email_client.timeout();
     let email_client = EmailClient::new(
         configuration.email_client.base_url,
         sender_email,
-        configuration.email_client.authorization_token
+        configuration.email_client.authorization_token,
+        timeout,
     );
 
     let address = format!(
