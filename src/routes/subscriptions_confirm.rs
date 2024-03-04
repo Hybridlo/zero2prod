@@ -1,4 +1,6 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpResponse, ResponseError};
+use anyhow::Context;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -9,19 +11,54 @@ pub struct Parameters {
 }
 
 #[tracing::instrument(name = "Confirm a pending subscriber", skip(parameters, pool))]
-pub async fn confirm(parameters: web::Query<Parameters>, pool: web::Data<PgPool>) -> HttpResponse {
-    let id = match get_subscriber_id_from_token(&pool, &parameters.subscription_token).await {
-        Ok(id) => id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+pub async fn confirm(
+    parameters: web::Query<Parameters>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, ConfirmationError> {
+    let id = get_subscriber_id_from_token(&pool, &parameters.subscription_token)
+        .await
+        .context("Failed to retrieve a subscriber id from provided token.")?
+        .ok_or(ConfirmationError::Unauthorized)?;
 
-    match id {
-        None => HttpResponse::Unauthorized().finish(),
-        Some(subscriber_id) => {
-            if confirm_subscriber(&pool, subscriber_id).await.is_err() {
-                return HttpResponse::InternalServerError().finish();
-            }
-            HttpResponse::Ok().finish()
+    confirm_subscriber(&pool, id)
+        .await
+        .context("Failed changing subscriber status to `confirmed`.")?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+fn error_chain_fmt(
+    e: &impl std::error::Error,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    writeln!(f, "{}\n", e)?;
+    let mut current = e.source();
+    while let Some(cause) = current {
+        writeln!(f, "Caused by:\n\t{}", cause)?;
+        current = cause.source();
+    }
+    Ok(())
+}
+
+#[derive(thiserror::Error)]
+pub enum ConfirmationError {
+    #[error("Confirmation attempt failed.")]
+    Unauthorized,
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for ConfirmationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl ResponseError for ConfirmationError {
+    fn status_code(&self) -> reqwest::StatusCode {
+        match self {
+            ConfirmationError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ConfirmationError::Unauthorized => StatusCode::UNAUTHORIZED,
         }
     }
 }
