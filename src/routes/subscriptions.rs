@@ -63,7 +63,7 @@ pub async fn subscribe(
 )]
 pub async fn send_confirmation_email(
     email_client: &EmailClient,
-    new_subscriber: NewSubscriber
+    new_subscriber: NewSubscriber,
 ) -> Result<(), reqwest::Error> {
     let confirmation_link = "https://my-api.com/subscriptions/confirm";
     let plain_body = format!(
