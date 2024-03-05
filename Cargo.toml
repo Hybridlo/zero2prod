@@ -7,20 +7,18 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.5.1"
+actix-web-flash-messages = { version = "0.4.2", features = ["cookies"] }
 anyhow = "1.0.80"
 argon2 = { version = "0.5.3", features = ["std"] }
 base64 = "0.22.0"
 chrono = "0.4.34"
 config = "0.14.0"
-hex = "0.4.3"
-hmac = { version = "0.12.1", features = ["std"] }
 htmlescape = "0.3.1"
 rand = { version = "0.8.5", features = ["std_rng"] }
-reqwest = { version = "0.11.24", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11.24", features = ["json", "rustls-tls", "cookies"] }
 secrecy = { version = "0.8.0", features = ["serde"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde-aux = "4.5.0"
-sha2 = "0.10.8"
 sqlx = { version = "0.7.3", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
