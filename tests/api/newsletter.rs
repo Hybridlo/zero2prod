@@ -25,7 +25,7 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
             "html": "<p>Newsletter body as HTML</p>",
         }
     });
-    let response = app.post_newslatter(newsletter_request_body).await;
+    let response = app.post_newsletter(newsletter_request_body).await;
 
     // Assert
     assert_eq!(response.status().as_u16(), 200);
@@ -52,7 +52,7 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
             "html": "<p>Newsletter body as HTML</p>",
         }
     });
-    let response = app.post_newslatter(newsletter_request_body).await;
+    let response = app.post_newsletter(newsletter_request_body).await;
 
     // Assert
     assert_eq!(response.status().as_u16(), 200);
@@ -81,7 +81,7 @@ async fn newsletters_returns_a_400_for_invalid_data() {
 
     for (invalid_body, error_message) in test_cases {
         // Act
-        let response = app.post_newslatter(invalid_body).await;
+        let response = app.post_newsletter(invalid_body).await;
 
         // Assert
         assert_eq!(
@@ -91,6 +91,29 @@ async fn newsletters_returns_a_400_for_invalid_data() {
             error_message
         );
     }
+}
+
+#[tokio::test]
+async fn requests_missing_authorization_are_rejected() {
+    // Arrange
+    let app = spawn_app().await;
+    let body = serde_json::json!({
+        "title": "Newsletter title",
+        "content": {
+            "text": "Newsletter body as plain text",
+            "html": "<p>Newsletter body as HTML</p>",
+        }
+    });
+
+    let response = reqwest::Client::new()
+        .post(&format!("{}/newsletter", &app.address))
+        .json(&body)
+        .send()
+        .await
+        .expect("Failed to execute request.");
+
+    assert_eq!(401, response.status().as_u16());
+    assert_eq!(r#"Basic realm="publish""#, response.headers()["WWW-Authenticate"]);
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
