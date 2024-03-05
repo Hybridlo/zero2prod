@@ -5,6 +5,8 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::error_chain_fmt;
+
 #[derive(Deserialize)]
 pub struct Parameters {
     subscription_token: String,
@@ -25,19 +27,6 @@ pub async fn confirm(
         .context("Failed changing subscriber status to `confirmed`.")?;
 
     Ok(HttpResponse::Ok().finish())
-}
-
-fn error_chain_fmt(
-    e: &impl std::error::Error,
-    f: &mut std::fmt::Formatter<'_>,
-) -> std::fmt::Result {
-    writeln!(f, "{}\n", e)?;
-    let mut current = e.source();
-    while let Some(cause) = current {
-        writeln!(f, "Caused by:\n\t{}", cause)?;
-        current = cause.source();
-    }
-    Ok(())
 }
 
 #[derive(thiserror::Error)]
