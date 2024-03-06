@@ -158,8 +158,9 @@ pub async fn spawn_app() -> TestApp {
 
     configure_database(&configuration.database).await;
 
-    let application =
-        Application::build(configuration.clone()).expect("Failed to build application");
+    let application = Application::build(configuration.clone())
+        .await
+        .expect("Failed to build application");
     let application_port = application.port();
     let address = format!("http://127.0.0.1:{}", application_port);
     _ = tokio::spawn(application.run_until_stopped());
