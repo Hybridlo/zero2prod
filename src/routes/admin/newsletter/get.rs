@@ -1,10 +1,8 @@
 use actix_web::{http::header::ContentType, HttpResponse};
 
 pub async fn publish_newsletter_form() -> Result<HttpResponse, actix_web::Error> {
-    Ok(HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(
-            r#"<!DOCTYPE html>
+    Ok(HttpResponse::Ok().content_type(ContentType::html()).body(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
@@ -43,6 +41,6 @@ pub async fn publish_newsletter_form() -> Result<HttpResponse, actix_web::Error>
     </form>
     <p><a href="/admin/dashboard>&lt;- Back</a></p>
 </body>
-</html>"#
-        ))
+</html>"#,
+    ))
 }
