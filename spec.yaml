@@ -34,6 +34,9 @@ services:
       - key: APP_APPLICATION__BASE_URL
         scope: RUN_TIME
         value: ${APP_URL}
+      - key: APP_REDIS_URI
+        scope: RUN_TIME
+        value: ${newsletter_redis.DATABASE_URL}
 
 databases:
   - engine: PG
@@ -41,3 +44,7 @@ databases:
     num_nodes: 1
     size: db-s-dev-database
     version: "12"
+  - engine: REDIS
+    name: newsletter_redis
+    num_nodes: 1
+    version: "6"
