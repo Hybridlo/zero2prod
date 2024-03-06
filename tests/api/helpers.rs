@@ -109,13 +109,28 @@ impl TestApp {
         ConfirmationLinks { html, plain_text }
     }
 
-    pub async fn post_newsletter(&self, body: serde_json::Value) -> reqwest::Response {
+    pub async fn post_newsletter<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
         self.api_client
             .post(&format!("{}/admin/newsletter", &self.address))
             .form(&body)
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn get_newsletter_form(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/admin/newsletter", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn get_newsletter_form_html(&self) -> String {
+        self.get_newsletter_form().await.text().await.unwrap()
     }
 
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response

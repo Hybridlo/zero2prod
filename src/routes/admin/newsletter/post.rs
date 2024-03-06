@@ -1,50 +1,73 @@
-use actix_web::{http::header, web, HttpResponse, ResponseError};
+use actix_web::{web, HttpResponse};
+use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
-use reqwest::{header::HeaderValue, StatusCode};
 use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::{
-    authentication::UserId, domain::SubscriberEmail, email_client::EmailClient,
-    routes::error_chain_fmt,
+    authentication::UserId,
+    domain::SubscriberEmail,
+    email_client::EmailClient,
+    idempotency::{save_response, try_processing, IdempotencyKey, NextAction},
+    utils::{e400, e500, see_other},
 };
 
 #[derive(Deserialize)]
-pub struct BodyData {
+pub struct FormData {
     title: String,
     html_content: String,
     text_content: String,
+    idempotency_key: String,
 }
 
 #[tracing::instrument(
     name = "Publish a newsletter issue",
-    skip(body, pool, email_client, user_id),
-    fields(user_id=tracing::field::Empty)
+    skip(form, pool, email_client, user_id),
+    fields(idempotency_key = form.0.idempotency_key, user_id = user_id.to_string())
 )]
 pub async fn publish_newsletter(
-    body: web::Form<BodyData>,
+    form: web::Form<FormData>,
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     user_id: web::ReqData<UserId>,
-) -> Result<HttpResponse, PublishError> {
-    let user_id = user_id.into_inner();
-    tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
-    let subscribers = get_confirmed_subscribers(&pool).await?;
+) -> Result<HttpResponse, actix_web::Error> {
+    let FormData {
+        title,
+        html_content,
+        text_content,
+        idempotency_key,
+    } = form.0;
+    let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
+
+    // early return if the request is identical to a previous one
+    let transaction = match try_processing(&pool, &idempotency_key, **user_id)
+        .await
+        .map_err(e500)?
+    {
+        NextAction::StartProcessing(t) => t,
+        NextAction::ReturnSavedResponse(saved_response) => {
+            success_message().send();
+            return Ok(saved_response);
+        }
+    };
+
+    let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
     for subscriber in subscribers {
         match subscriber {
             Ok(subscriber) => {
                 email_client
                     .send_email(
                         &subscriber.email,
-                        &body.title,
-                        &body.html_content,
-                        &body.text_content,
+                        &title,
+                        &html_content,
+                        &text_content,
                         false,
                     )
                     .await
                     .with_context(|| {
                         format!("Failed to send newsletter issue to {}", subscriber.email)
-                    })?;
+                    })
+                    .map_err(e500)?;
             }
             Err(error) => {
                 tracing::warn!(
@@ -55,39 +78,16 @@ pub async fn publish_newsletter(
             }
         }
     }
-    Ok(HttpResponse::Ok().finish())
+    success_message().send();
+    let response = see_other("/admin/newsletter");
+    let response = save_response(transaction, &idempotency_key, **user_id, response)
+        .await
+        .map_err(e500)?;
+    Ok(response)
 }
 
-#[derive(thiserror::Error)]
-pub enum PublishError {
-    #[error("Authentication failed")]
-    AuthError(#[source] anyhow::Error),
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-}
-
-impl std::fmt::Debug for PublishError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        error_chain_fmt(self, f)
-    }
-}
-
-impl ResponseError for PublishError {
-    fn error_response(&self) -> HttpResponse {
-        match self {
-            PublishError::UnexpectedError(_) => {
-                HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            PublishError::AuthError(_) => {
-                let mut response = HttpResponse::new(StatusCode::UNAUTHORIZED);
-                let header_value = HeaderValue::from_str(r#"Basic realm="publish""#).unwrap();
-                response
-                    .headers_mut()
-                    .insert(header::WWW_AUTHENTICATE, header_value);
-                response
-            }
-        }
-    }
+fn success_message() -> FlashMessage {
+    FlashMessage::info("The newsletter issue has been published!")
 }
 
 struct ConfirmedSubscriber {
