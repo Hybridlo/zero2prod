@@ -1,9 +1,13 @@
 use std::time::Duration;
 
 use crate::helpers::assert_is_redirect_to;
+use fake::{
+    faker::{internet::en::SafeEmail, name::en::Name},
+    Fake,
+};
 use wiremock::{
     matchers::{any, method, path},
-    Mock, ResponseTemplate,
+    Mock, MockBuilder, ResponseTemplate,
 };
 
 use crate::helpers::{spawn_app, ConfirmationLinks, TestApp};
@@ -29,9 +33,15 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
     let response = app.post_newsletter(&newsletter_request_body).await;
-
-    // Assert
     assert_is_redirect_to(&response, "/admin/newsletter");
+
+    // Follow the redirect
+    let html_page = app.get_newsletter_form_html().await;
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - \
+        emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
     // Mock verifies on Drop that we haven't sent the newsletter email
 }
 
@@ -56,9 +66,15 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
     let response = app.post_newsletter(&newsletter_request_body).await;
-
-    // Assert
     assert_is_redirect_to(&response, "/admin/newsletter");
+
+    // Follow the redirect
+    let html_page = app.get_newsletter_form_html().await;
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - \
+        emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
     // Mock verifies on Drop that we have sent the newsletter email
 }
 
@@ -120,8 +136,7 @@ async fn newsletter_creation_is_idempotent() {
     create_confirmed_subscriber(&app).await;
     app.login_self().await;
 
-    Mock::given(path("/v2/email/send"))
-        .and(method("POST"))
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(200))
         .expect(1)
         .mount(&app.email_server)
@@ -139,7 +154,11 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act - Part 2 - Follow the redirect
     let html_page = app.get_newsletter_form_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - \
+        emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
 
     // Act - Part 3 - Submit newsletter form **again**
     let response = app.post_newsletter(&newsletter_request_body).await;
@@ -147,7 +166,11 @@ async fn newsletter_creation_is_idempotent() {
 
     // Act - Part 4 - Follow the redirect
     let html_page = app.get_newsletter_form_html().await;
-    assert!(html_page.contains("<p><i>The newsletter issue has been published!</i></p>"));
+    assert!(html_page.contains(
+        "<p><i>The newsletter issue has been accepted - \
+        emails will go out shortly.</i></p>"
+    ));
+    app.dispatch_all_pending_emails().await;
 
     // Assert
     // Mock verifies on Drop that we have sent the newsletter email **once**
@@ -160,8 +183,7 @@ async fn concurrent_form_submission_is_handled_gracefully() {
     create_confirmed_subscriber(&app).await;
     app.login_self().await;
 
-    Mock::given(path("/v2/email/send"))
-        .and(method("POST"))
+    when_sending_an_email()
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
         .expect(1)
         .mount(&app.email_server)
@@ -185,14 +207,24 @@ async fn concurrent_form_submission_is_handled_gracefully() {
         response2.text().await.unwrap()
     );
 
+    app.dispatch_all_pending_emails().await;
     // Mock verifies on Drop that we have sent the newsletter email **once**
 }
 
-async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
-    let body = "name=le%20guin&email=ursule_le_guin%40gmail.com";
+fn when_sending_an_email() -> MockBuilder {
+    Mock::given(path("/v2/email/send")).and(method("POST"))
+}
 
-    let _mock_guard = Mock::given(path("/v2/email/send"))
-        .and(method("POST"))
+async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
+    let name: String = Name().fake();
+    let email: String = SafeEmail().fake();
+    let body = serde_urlencoded::to_string(&serde_json::json!({
+        "name": name,
+        "email": email
+    }))
+    .unwrap();
+
+    let _mock_guard = when_sending_an_email()
         .respond_with(ResponseTemplate::new(200))
         .named("Create unconfirmed subscriber")
         .expect(1)

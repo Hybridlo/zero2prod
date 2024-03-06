@@ -6,7 +6,7 @@ use sqlx::{
     ConnectOptions,
 };
 
-use crate::{domain::SubscriberEmail, startup::HmacSecret};
+use crate::{domain::SubscriberEmail, email_client::EmailClient, startup::HmacSecret};
 
 #[derive(Clone, Deserialize)]
 pub struct Settings {
@@ -22,6 +22,19 @@ pub struct EmailClientSettings {
     pub sender_email: String,
     pub authorization_token: Secret<String>,
     pub timeout_milliseconds: u64,
+}
+
+impl EmailClientSettings {
+    pub fn client(self) -> EmailClient {
+        let sender_email = self.sender().expect("Invalid sernder email address");
+        let timeout = self.timeout();
+        EmailClient::new(
+            self.base_url,
+            sender_email,
+            self.authorization_token,
+            timeout,
+        )
+    }
 }
 
 impl EmailClientSettings {
